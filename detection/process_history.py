@@ -1,4 +1,5 @@
 from collections import defaultdict, deque
+import time
 
 
 class ProcessHistory:
@@ -23,18 +24,16 @@ class ProcessHistory:
         data = self.history[pid]
 
         data["cpu"].append(
-            process["cpu"]
+            float(process["cpu"])
         )
 
         data["memory"].append(
-            process["memory_mb"]
+            float(process["memory_mb"])
         )
 
         data["threads"].append(
-            process["threads"]
+            int(process["threads"])
         )
-
-        import time
 
         data["timestamps"].append(
             time.time()
@@ -48,3 +47,11 @@ class ProcessHistory:
 
         if pid in self.history:
             del self.history[pid]
+
+    def size(self):
+
+        return len(self.history)
+
+    def clear(self):
+
+        self.history.clear()

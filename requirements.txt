@@ -1,3 +1,7 @@
 psutil
 PySide6
 pyqtgraph
+pandas
+numpy
+scikit-learn
+joblib
