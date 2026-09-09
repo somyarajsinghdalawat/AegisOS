@@ -1,24 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
 # Virtual environment
 venv/
 .venv/
+env/
+ENV/
 
-# Python cache
-__pycache__/
-*.py[cod]
+# ML generated files
+ml/models/*.pkl
+ml/models/*.npz
+ml/models/*_metadata.json
 
-# SQLite database
+# Database
 *.db
 *.sqlite
 *.sqlite3
 
-# Environment variables
-.env
-
-# ML generated models
-ml/models/
-
-# VS Code
+# IDE
 .vscode/
+.idea/
 
-# Logs
-*.log
+# OS
+.DS_Store
+Thumbs.db

@@ -1,24 +1,31 @@
 from pathlib import Path
+
 import joblib
 
-from ml.process_anomaly_detector import ProcessAnomalyDetector
+from ml.process_anomaly_detector import (
+    ProcessAnomalyDetector
+)
 
 
 class ModelManager:
 
-    MODEL_PATH = Path("ml/models/process_anomaly_model.pkl")
+    MODEL_PATH = Path(
+        "ml/models/process_anomaly_model.pkl"
+    )
 
     def __init__(self):
 
-        self.detector = ProcessAnomalyDetector()
+        self.detector = (
+            ProcessAnomalyDetector()
+        )
 
-    # =================================================
-    # TRAIN
-    # =================================================
-
-    def train(self, feature_vectors):
+    def train(
+        self,
+        feature_vectors
+    ):
 
         if not feature_vectors:
+
             raise ValueError(
                 "No feature vectors available for training."
             )
@@ -27,52 +34,100 @@ class ModelManager:
             feature_vectors
         )
 
-    # =================================================
-    # SAVE
-    # =================================================
+    def train_and_save(
+        self,
+        feature_vectors
+    ):
 
-    def save(self):
+        self.train(
+            feature_vectors
+        )
 
-        self.MODEL_PATH.parent.mkdir(
+        self.save()
+
+    def save(
+        self,
+        path=None
+    ):
+
+        if path is None:
+
+            path = self.MODEL_PATH
+
+        path = Path(
+            path
+        )
+
+        path.parent.mkdir(
             parents=True,
             exist_ok=True
         )
 
         joblib.dump(
             self.detector,
-            self.MODEL_PATH
+            path
         )
 
         print(
-            f"Model saved to: {self.MODEL_PATH}"
+            f"Model saved to: {path}"
         )
 
-    # =================================================
-    # LOAD
-    # =================================================
+    def load(
+        self,
+        path=None
+    ):
 
-    def load(self):
+        if path is None:
 
-        if not self.MODEL_PATH.exists():
+            path = self.MODEL_PATH
+
+        path = Path(
+            path
+        )
+
+        if not path.exists():
 
             raise FileNotFoundError(
-                f"Model not found: {self.MODEL_PATH}"
+                f"Model not found: {path}"
             )
 
         self.detector = joblib.load(
-            self.MODEL_PATH
+            path
         )
 
         print(
-            f"Model loaded from: {self.MODEL_PATH}"
+            f"Model loaded from: {path}"
         )
 
-    # =================================================
-    # PREDICT
-    # =================================================
-
-    def predict(self, vector):
+    def predict(
+        self,
+        vector
+    ):
 
         return self.detector.predict(
             vector
         )
+
+    def predict_many(
+        self,
+        vectors
+    ):
+
+        return self.detector.predict_many(
+            vectors
+        )
+
+    @property
+    def trained(self):
+
+        return self.detector.trained
+
+    @property
+    def feature_count(self):
+
+        return self.detector.feature_count
+
+    @property
+    def training_samples(self):
+
+        return self.detector.training_samples
