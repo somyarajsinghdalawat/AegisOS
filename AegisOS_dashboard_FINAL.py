@@ -1,13 +1,6 @@
 import sys
 import time
-from pathlib import Path
 from collections import deque
-
-# Add the AegisOS project root to Python's import path.
-# This is required when running: python dashboard\\main.py
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPainter, QPen, QFont

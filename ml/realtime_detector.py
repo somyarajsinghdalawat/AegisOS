@@ -22,7 +22,9 @@ MIN_SAMPLES = 10
 DISPLAY_INTERVAL = 5
 TRAINING_SAMPLES = 30
 
-DRY_RUN = True
+# Self-healing is enabled.
+# Safety is enforced inside SafeRecoveryEngine.
+DRY_RUN = False
 
 
 FEATURE_NAMES = [
@@ -30,19 +32,24 @@ FEATURE_NAMES = [
     "cpu_max",
     "cpu_std",
     "cpu_recent",
+
     "memory_mean",
     "memory_max",
     "memory_std",
     "memory_recent",
+
     "threads_mean",
     "threads_max",
     "threads_recent",
+
     "cpu_slope",
     "memory_slope",
     "thread_slope",
+
     "cpu_change",
     "memory_change",
     "thread_change",
+
     "cpu_volatility",
     "memory_volatility"
 ]
@@ -62,7 +69,10 @@ model_manager = ModelManager()
 
 alert_engine = AlertEngine()
 
-recovery_policy = RecoveryPolicyEngine()
+recovery_policy = RecoveryPolicyEngine(
+    cooldown_seconds=60,
+    persistence_required=3
+)
 
 recovery_engine = SafeRecoveryEngine(
     dry_run=DRY_RUN
@@ -80,6 +90,7 @@ def collect_training_data():
     print(
         f"Collecting {TRAINING_SAMPLES} samples..."
     )
+
     print()
 
     for sample_number in range(
@@ -88,7 +99,9 @@ def collect_training_data():
     ):
 
         print(
-            f"Sample {sample_number}/{TRAINING_SAMPLES}",
+            f"Sample "
+            f"{sample_number}/"
+            f"{TRAINING_SAMPLES}",
             end="\r",
             flush=True
         )
@@ -98,6 +111,7 @@ def collect_training_data():
         )
 
         for process in processes:
+
             history_manager.update(
                 process
             )
@@ -118,12 +132,19 @@ def build_feature_vectors():
         history_manager.history.keys()
     ):
 
-        history = history_manager.get(pid)
+        history = (
+            history_manager.get(
+                pid
+            )
+        )
 
         if history is None:
             continue
 
-        if len(history["cpu"]) < MIN_SAMPLES:
+        if len(
+            history["cpu"]
+        ) < MIN_SAMPLES:
+
             continue
 
         try:
@@ -138,7 +159,9 @@ def build_feature_vectors():
                 continue
 
             vector = [
-                float(features[name])
+                float(
+                    features[name]
+                )
                 for name in FEATURE_NAMES
             ]
 
@@ -152,6 +175,7 @@ def build_feature_vectors():
             ZeroDivisionError,
             TypeError
         ):
+
             continue
 
     return feature_vectors
@@ -167,13 +191,16 @@ def train_model():
         f"Usable process profiles: "
         f"{len(feature_vectors)}"
     )
+
     print()
 
-    if len(feature_vectors) < 10:
+    if len(
+        feature_vectors
+    ) < 10:
 
         raise RuntimeError(
-            "Not enough usable process profiles "
-            "for training."
+            "Not enough usable process "
+            "profiles for training."
         )
 
     print(
@@ -189,6 +216,7 @@ def train_model():
     print(
         "Training complete."
     )
+
     print()
 
 
@@ -208,14 +236,19 @@ def analyze_processes():
             process
         )
 
-        history = history_manager.get(
-            pid
+        history = (
+            history_manager.get(
+                pid
+            )
         )
 
         if history is None:
             continue
 
-        if len(history["cpu"]) < MIN_SAMPLES:
+        if len(
+            history["cpu"]
+        ) < MIN_SAMPLES:
+
             continue
 
         try:
@@ -230,7 +263,9 @@ def analyze_processes():
                 continue
 
             vector = [
-                float(features[name])
+                float(
+                    features[name]
+                )
                 for name in FEATURE_NAMES
             ]
 
@@ -240,10 +275,11 @@ def analyze_processes():
                 )
             )
 
-            if prediction == -1:
-                status = "ANOMALY"
-            else:
-                status = "NORMAL"
+            status = (
+                "ANOMALY"
+                if prediction == -1
+                else "NORMAL"
+            )
 
             risk_result = (
                 risk_engine.calculate(
@@ -253,18 +289,28 @@ def analyze_processes():
                 )
             )
 
-            risk = risk_result["risk"]
-            level = risk_result["level"]
-
             results.append(
                 {
-                    "pid": pid,
-                    "process_name": process["name"],
-                    "status": status,
-                    "score": anomaly_score,
-                    "risk": risk,
-                    "level": level,
-                    "features": features
+                    "pid":
+                        pid,
+
+                    "process_name":
+                        process["name"],
+
+                    "status":
+                        status,
+
+                    "score":
+                        anomaly_score,
+
+                    "risk":
+                        risk_result["risk"],
+
+                    "level":
+                        risk_result["level"],
+
+                    "features":
+                        features
                 }
             )
 
@@ -275,88 +321,130 @@ def analyze_processes():
             ZeroDivisionError,
             TypeError
         ):
+
             continue
 
     return results
 
 
-def process_alerts(results):
+def calculate_confidence(
+    anomaly_score
+):
+
+    return min(
+        1.0,
+        max(
+            0.0,
+            abs(
+                float(
+                    anomaly_score
+                )
+            ) * 2
+        )
+    )
+
+
+def process_alerts(
+    results
+):
 
     for result in results:
 
-        if not alert_engine.should_alert(
-            result
-        ):
+        # Only anomalous processes enter
+        # the recovery decision pipeline.
+        if result["status"] != "ANOMALY":
+
+            recovery_policy.reset_process(
+                result["pid"]
+            )
+
             continue
 
-        alert = (
-            alert_engine.create_alert(
-                result
-            )
-        )
+        pid = result["pid"]
 
-        alert_engine.format_alert(
-            alert
-        )
-
-        incident_id = (
-            incident_logger.log_incident(
-
-                pid=result["pid"],
-
-                process_name=
-                    result["process_name"],
-
-                anomaly_score=
-                    result["score"],
-
-                risk_score=
-                    result["risk"],
-
-                risk_level=
-                    result["level"],
-
-                reasons=
-                    alert["reasons"],
-
-                action="ALERT",
-
-                recovery_status=
-                    "NOT_ATTEMPTED",
-
-                recovery_verification=
-                    "NOT_VERIFIED"
-            )
-        )
-
-        persistent = True
-
-        confidence = min(
-            1.0,
-            max(
-                0.0,
-                abs(
-                    float(
-                        result["score"]
-                    )
-                ) * 2
-            )
+        confidence = calculate_confidence(
+            result["score"]
         )
 
         controlled_test = (
             recovery_engine.is_controlled_process(
-                result["pid"]
+                pid
             )
         )
+
+        persistent_count = (
+            recovery_policy.get_persistence(
+                pid
+            ) + 1
+        )
+
+        persistent = (
+            persistent_count
+            >= recovery_policy.persistence_required
+        )
+
+        # Alert generation
+        if alert_engine.should_alert(
+            result
+        ):
+
+            alert = (
+                alert_engine.create_alert(
+                    result
+                )
+            )
+
+            alert_engine.format_alert(
+                alert
+            )
+
+            incident_id = (
+                incident_logger.log_incident(
+
+                    pid=result["pid"],
+
+                    process_name=
+                        result["process_name"],
+
+                    anomaly_score=
+                        result["score"],
+
+                    risk_score=
+                        result["risk"],
+
+                    risk_level=
+                        result["level"],
+
+                    reasons=
+                        alert["reasons"],
+
+                    action="ALERT",
+
+                    recovery_status=
+                        "NOT_ATTEMPTED",
+
+                    recovery_verification=
+                        "NOT_VERIFIED"
+                )
+            )
+
+        else:
+
+            # We still need a recovery decision
+            # even when alert cooldown suppresses
+            # the visible alert.
+            incident_id = None
 
         policy = (
             recovery_policy.decide(
 
                 result=result,
 
-                persistent=persistent,
+                persistent=
+                    persistent,
 
-                confidence=confidence,
+                confidence=
+                    confidence,
 
                 controlled_test=
                     controlled_test
@@ -365,33 +453,53 @@ def process_alerts(results):
 
         print(
             f"[RECOVERY POLICY] "
-            f"PID={result['pid']} "
+            f"PID={pid} "
             f"ACTION={policy['action']} "
-            f"CLASS={policy['classification']}"
+            f"CLASS={policy['classification']} "
+            f"PERSISTENCE="
+            f"{persistent_count}/"
+            f"{recovery_policy.persistence_required}"
         )
 
         recovery_reason = (
             f"Risk={result['risk']:.0f}, "
-            f"persistent={persistent}, "
             f"confidence={confidence:.2f}, "
+            f"persistence="
+            f"{persistent_count}/"
+            f"{recovery_policy.persistence_required}, "
+            f"controlled_test="
+            f"{controlled_test}, "
             f"reason={policy['reason']}"
         )
 
+        # Autonomous recovery
         recovery_result = (
             recovery_engine.execute(
 
                 policy,
 
-                result["pid"],
+                pid,
 
-                reason=recovery_reason
+                reason=
+                    recovery_reason
             )
         )
 
+        print(
+            f"[RECOVERY RESULT] "
+            f"PID={pid} "
+            f"STATUS="
+            f"{recovery_result['status']} "
+            f"ACTION="
+            f"{recovery_result['action']}"
+        )
+
         verification_result = {
-            "status": "NOT_VERIFIED"
+            "status":
+                "NOT_VERIFIED"
         }
 
+        # Verify actual recovery action.
         if (
             recovery_result["action"]
             != "NONE"
@@ -400,67 +508,98 @@ def process_alerts(results):
             verification_result = (
                 recovery_verifier.verify(
 
-                    pid=result["pid"],
+                    pid=pid,
 
                     action=
-                        recovery_result["action"]
+                        recovery_result[
+                            "action"
+                        ]
                 )
             )
 
-        resolution_timestamp = None
-
-        if (
-            verification_result["status"]
-            in (
-                "SUCCESS",
-                "PARTIAL",
-                "FAILED"
+            print(
+                f"[RECOVERY VERIFICATION] "
+                f"PID={pid} "
+                f"STATUS="
+                f"{verification_result['status']}"
             )
-        ):
 
-            resolution_timestamp = time.time()
+        # Update incident if one was created.
+        if incident_id is not None:
 
-        incident_logger.update_recovery(
+            resolution_timestamp = None
 
-            incident_id=incident_id,
+            if (
+                verification_result["status"]
+                in (
+                    "SUCCESS",
+                    "PARTIAL",
+                    "FAILED"
+                )
+            ):
 
-            action=
-                recovery_result["action"],
+                resolution_timestamp = (
+                    time.time()
+                )
 
-            recovery_status=
-                recovery_result["status"],
+            incident_logger.update_recovery(
 
-            recovery_verification=
-                verification_result["status"],
+                incident_id=
+                    incident_id,
 
-            resolution_timestamp=
-                resolution_timestamp
-        )
+                action=
+                    recovery_result["action"],
 
+                recovery_status=
+                    recovery_result["status"],
+
+                recovery_verification=
+                    verification_result["status"],
+
+                resolution_timestamp=
+                    resolution_timestamp
+            )
+
+        # Recovery succeeded.
         if (
             recovery_result["status"]
-            == "SUCCESS"
+            in (
+                "SUCCESS",
+                "ALREADY_STOPPED"
+            )
         ):
 
             recovery_policy.mark_recovery(
-                result["pid"]
+                pid
             )
 
-        print(
-            f"[RECOVERY RESULT] "
-            f"PID={result['pid']} "
-            f"STATUS={recovery_result['status']} "
-            f"VERIFICATION="
-            f"{verification_result['status']}"
-        )
+            print(
+                f"[SELF-HEALING] "
+                f"Recovery completed for "
+                f"controlled PID {pid}"
+            )
+
+        print()
 
 
-def display_results(results):
+def display_results(
+    results
+):
 
     print()
-    print("AEGIS OS")
-    print("REAL-TIME PROCESS AI")
-    print("====================")
+
+    print(
+        "AEGIS OS"
+    )
+
+    print(
+        "REAL-TIME PROCESS AI + SELF-HEALING"
+    )
+
+    print(
+        "===================================="
+    )
+
     print()
 
     print(
@@ -473,11 +612,15 @@ def display_results(results):
         f"{'Threads':<10}"
     )
 
-    print("-" * 70)
+    print(
+        "-" * 70
+    )
 
     for result in results:
 
-        features = result["features"]
+        features = result[
+            "features"
+        ]
 
         cpu = features[
             "cpu_recent"
@@ -509,11 +652,24 @@ def realtime_monitor():
     print(
         "Starting real-time monitoring..."
     )
+
+    print()
+
+    print(
+        "AUTONOMOUS SELF-HEALING: ENABLED"
+    )
+
+    print(
+        "Recovery is restricted to controlled "
+        "test processes."
+    )
+
     print()
 
     print(
         "Press CTRL+C to stop."
     )
+
     print()
 
     last_display = 0
@@ -541,7 +697,9 @@ def realtime_monitor():
                     results
                 )
 
-                last_display = current_time
+                last_display = (
+                    current_time
+                )
 
             time.sleep(
                 SAMPLE_INTERVAL
@@ -550,6 +708,7 @@ def realtime_monitor():
     except KeyboardInterrupt:
 
         print()
+
         print(
             "Stopping AegisOS "
             "real-time monitoring..."
@@ -563,9 +722,19 @@ def realtime_monitor():
 def main():
 
     print()
-    print("AEGIS OS")
-    print("Process AI Model Training")
-    print("=========================")
+
+    print(
+        "AEGIS OS"
+    )
+
+    print(
+        "Process AI Model Training"
+    )
+
+    print(
+        "========================="
+    )
+
     print()
 
     collect_training_data()
@@ -576,4 +745,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()
