@@ -437,17 +437,9 @@ def process_alerts(
 
         policy = (
             recovery_policy.decide(
-
                 result=result,
-
-                persistent=
-                    persistent,
-
-                confidence=
-                    confidence,
-
-                controlled_test=
-                    controlled_test
+                confidence=confidence,
+                controlled_test=controlled_test
             )
         )
 
